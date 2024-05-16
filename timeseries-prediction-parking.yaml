@@ -1,0 +1,97 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: timeseries-prediction-parking-
+  labels:
+    workflows.argoproj.io/archive-strategy: "always"
+  annotations:
+    workflows.argoproj.io/description: |
+      Fetching data from influx, predicting, storing it back to influx
+
+spec:
+#kind: CronWorkflow
+#  schedule: "0 5 * * *"
+#  timezone: "CEST"
+  entrypoint: parking-prediction
+  volumeClaimTemplates:                 # define volume, same syntax as k8s Pod spec
+  - metadata:
+      name: timeseries-prediction-workdir                     # name of volume claim
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: "longhorn"
+      resources:
+        requests:
+          storage: 100Mi
+
+  templates:
+  - name: parking-prediction
+    steps:
+    - - name: extract-csv-from-influx
+        template: curl-query
+        arguments:
+          parameters:
+          - name: cmd
+            value: >-
+              curl -G 'http://192.168.117.5:8086/query'
+              --data-urlencode "db=parking"
+              --data-urlencode "q=SELECT mean(spaces) as value FROM \"parkingplace\" group by time(10m) order by time desc limit 2016"
+              -H "Accept: application/csv" > /volume/parkingplace.csv
+    - - name: extract-check-results
+        template: curl-query
+        arguments:
+          parameters:
+          - name: cmd
+            value: >-
+              cat /volume/parkingplace.csv
+    - - name: transform-darts-forecast
+        template: darts-timeseries-forecaster
+    - - name: transform-check-results
+        template: curl-query
+        arguments:
+          parameters:
+          - name: cmd
+            value: >-
+              cat /volume/prediction.csv
+  - name: curl-query
+    inputs:
+      parameters:
+      - name: cmd
+    container:
+      image: curlimages/curl:latest
+      command: ["/bin/sh", "-c"]
+      securityContext:
+        runAsUser: 0
+      args: ["{{inputs.parameters.cmd}}"]
+      resources:
+        requests:
+          memory: 32Mi
+          cpu: 100m
+      volumeMounts:                     # same syntax as k8s Pod spec
+      - name: timeseries-prediction-workdir
+        mountPath: /volume
+  - name: darts-timeseries-forecaster
+    container:
+      image: peterpeerdeman/darts-timeseries-forecaster:1.0.0
+      command: ["python", "app.py"]
+      env:
+      - name: INPUT_FREQUENCY
+        value: h
+      - name: INPUT_FILENAME
+        value: /volume/parkingplace.csv
+      - name: INPUT_TIMECOL
+        value: time
+      - name: INPUT_VALUECOL
+        value: value
+      - name: INPUT_MOVINGAVERAGE
+        value: '30'
+      - name: OUTPUT_FILENAME
+        value: /volume/prediction.csv
+      securityContext:
+        runAsUser: 0
+      resources:
+        requests:
+          memory: 32Mi
+          cpu: 100m
+      volumeMounts:                     # same syntax as k8s Pod spec
+      - name: timeseries-prediction-workdir
+        mountPath: /volume
