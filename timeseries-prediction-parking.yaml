@@ -51,7 +51,14 @@ spec:
           parameters:
           - name: cmd
             value: >-
-              cat /volume/prediction.csv
+              cat /volume/prediction.txt
+    - - name: load-predictions-into-influx
+        template: curl-query
+        arguments:
+          parameters:
+          - name: cmd
+            value: >-
+              curl -i -XPOST 'http://192.168.117.5:8086/write?db=parkingplace' --data-binary @/volume/prediction.txt
   - name: curl-query
     inputs:
       parameters:
@@ -71,7 +78,7 @@ spec:
         mountPath: /volume
   - name: darts-timeseries-forecaster
     container:
-      image: peterpeerdeman/darts-timeseries-forecaster:1.0.0
+      image: peterpeerdeman/darts-timeseries-forecaster:1.0.1
       command: ["python", "app.py"]
       env:
       - name: INPUT_FREQUENCY
@@ -84,8 +91,10 @@ spec:
         value: value
       - name: INPUT_MOVINGAVERAGE
         value: '30'
+      - name: OUTPUT_FORMAT
+        value: influx
       - name: OUTPUT_FILENAME
-        value: /volume/prediction.csv
+        value: /volume/prediction.txt
       securityContext:
         runAsUser: 0
       resources:
