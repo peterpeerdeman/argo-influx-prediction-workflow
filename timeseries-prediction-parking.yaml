@@ -3,16 +3,16 @@ apiVersion: argoproj.io/v1alpha1
 kind: CronWorkflow
 metadata:
   generateName: timeseries-prediction-parking-
+  namespace: argo
   labels:
     workflows.argoproj.io/archive-strategy: "always"
   annotations:
     workflows.argoproj.io/description: |
       Fetching data from influx, predicting, storing it back to influx
-
 spec:
-  schedule: "0 1,12 * * *"
+  schedule: "0 */12 * * *"
   concurrencyPolicy: "Replace"
-  timezone: "CEST"
+  startingDeadlineSeconds: 0
   workflowSpec:
     entrypoint: parking-prediction
     volumeClaimTemplates:                 # define volume, same syntax as k8s Pod spec
@@ -24,7 +24,6 @@ spec:
         resources:
           requests:
             storage: 100Mi
-  
     templates:
     - name: parking-prediction
       steps:
@@ -38,22 +37,8 @@ spec:
                 --data-urlencode "db=parking"
                 --data-urlencode "q=SELECT mean(spaces) as value FROM \"parkingplace\" WHERE (\"name\" = 'P+R Noord' AND \"spaces\" != 0 ) group by time(10m) order by time desc limit 4038"
                 -H "Accept: application/csv" > /volume/parkingplace.csv
-      - - name: extract-check-results
-          template: curl-query
-          arguments:
-            parameters:
-            - name: cmd
-              value: >-
-                cat /volume/parkingplace.csv
       - - name: transform-darts-forecast
           template: darts-timeseries-forecaster
-      - - name: transform-check-results
-          template: curl-query
-          arguments:
-            parameters:
-            - name: cmd
-              value: >-
-                cat /volume/prediction.txt
       - - name: load-predictions-into-influx
           template: curl-query
           arguments:
