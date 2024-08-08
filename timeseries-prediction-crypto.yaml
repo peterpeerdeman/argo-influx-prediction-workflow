@@ -1,0 +1,103 @@
+apiVersion: argoproj.io/v1alpha1
+#kind: Workflow
+kind: CronWorkflow
+metadata:
+  generateName: timeseries-prediction-crypto-
+  namespace: argo
+  labels:
+    workflows.argoproj.io/archive-strategy: "always"
+  annotations:
+    workflows.argoproj.io/description: |
+      Fetching data from influx, predicting, storing it back to influx
+spec:
+  schedule: "0 */12 * * *"
+  concurrencyPolicy: "Replace"
+  startingDeadlineSeconds: 0
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  workflowSpec:
+    entrypoint: crypto-prediction
+    volumeClaimGC:
+      strategy: OnWorkflowCompletion
+    volumeClaimTemplates:                 # define volume, same syntax as k8s Pod spec
+    - metadata:
+        name: crypto-prediction-workdir                     # name of volume claim
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        storageClassName: "longhorn"
+        resources:
+          requests:
+            storage: 100Mi
+    templates:
+    - name: crypto-prediction
+      steps:
+      - - name: extract-csv-from-influx
+          template: curl-query
+          arguments:
+            parameters:
+            - name: cmd
+              value: >-
+                curl -G 'http://192.168.117.5:8086/query'
+                --data-urlencode "db=crypto"
+                --data-urlencode "q=SELECT moving_average(mean(\"price\"), 30) as value FROM \"prices\" WHERE (\"crypto\" = 'btc') GROUP BY time(1d) order by time desc limit 200"
+                -H "Accept: application/csv" > /volume/crypto.csv
+      - - name: transform-darts-forecast
+          template: darts-timeseries-forecaster
+      - - name: load-predictions-into-influx
+          template: curl-query
+          arguments:
+            parameters:
+            - name: cmd
+              value: >-
+                curl -i -XPOST 'http://192.168.117.5:8086/write?db=crypto' --data-binary @/volume/prediction.txt
+    - name: curl-query
+      inputs:
+        parameters:
+        - name: cmd
+      container:
+        image: curlimages/curl:latest
+        command: ["/bin/sh", "-c"]
+        securityContext:
+          runAsUser: 0
+        args: ["{{inputs.parameters.cmd}}"]
+        #      resources:
+        #  requests:
+        #    memory: 32Mi
+        #    cpu: 100m
+        volumeMounts:                     # same syntax as k8s Pod spec
+        - name: crypto-prediction-workdir
+          mountPath: /volume
+    - name: darts-timeseries-forecaster
+      nodeSelector:
+        beta.kubernetes.io/arch: arm64
+      container:
+        image: peterpeerdeman/darts-timeseries-forecaster:43853f6c9ed281d402d6e939dbbfff14dd0282c2
+        command: ["python", "app.py"]
+        env:
+        - name: PREDICTION_MODEL
+          value: autoarima
+        - name: INPUT_FREQUENCY
+          value: D
+        - name: INPUT_FILENAME
+          value: /volume/crypto.csv
+        - name: INPUT_TIMECOL
+          value: time
+        - name: INPUT_VALUECOL
+          value: value
+        - name: PREDICTION_SPLIT
+          value: '0.95'
+        # - name: PREDICTION_COUNT
+        #   value: '14'
+        - name: OUTPUT_FORMAT
+          value: influx
+        - name: OUTPUT_FILENAME
+          value: /volume/prediction.txt
+        securityContext:
+          runAsUser: 0
+          #resources:
+          #requests:
+          #  memory: 32Mi
+          #  cpu: 100m
+        volumeMounts:                     # same syntax as k8s Pod spec
+        - name: crypto-prediction-workdir
+          mountPath: /volume
