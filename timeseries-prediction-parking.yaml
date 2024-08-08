@@ -13,8 +13,12 @@ spec:
   schedule: "0 */12 * * *"
   concurrencyPolicy: "Replace"
   startingDeadlineSeconds: 0
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
   workflowSpec:
     entrypoint: parking-prediction
+    volumeClaimGC:
+      strategy: OnWorkflowCompletion
     volumeClaimTemplates:                 # define volume, same syntax as k8s Pod spec
     - metadata:
         name: timeseries-prediction-workdir                     # name of volume claim
@@ -64,6 +68,8 @@ spec:
         - name: timeseries-prediction-workdir
           mountPath: /volume
     - name: darts-timeseries-forecaster
+      nodeSelector:
+        beta.kubernetes.io/arch: arm64
       container:
         image: peterpeerdeman/darts-timeseries-forecaster:1.0.6
         command: ["python", "app.py"]
