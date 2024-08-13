@@ -54,8 +54,12 @@ spec:
       inputs:
         parameters:
         - name: cmd
+      nodeSelector:
+        beta.kubernetes.io/arch: arm64
+        node-role.kubernetes.io/worker: worker
       container:
         image: curlimages/curl:latest
+        imagePullPolicy: Always
         command: ["/bin/sh", "-c"]
         securityContext:
           runAsUser: 0
@@ -70,8 +74,9 @@ spec:
     - name: darts-timeseries-forecaster
       nodeSelector:
         beta.kubernetes.io/arch: arm64
+        node-role.kubernetes.io/worker: worker
       container:
-        image: peterpeerdeman/darts-timeseries-forecaster:43853f6c9ed281d402d6e939dbbfff14dd0282c2
+        image: peterpeerdeman/darts-timeseries-forecaster:1.0.8-arm64
         command: ["python", "app.py"]
         env:
         - name: PREDICTION_MODEL
