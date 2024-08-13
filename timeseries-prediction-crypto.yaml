@@ -39,7 +39,7 @@ spec:
               value: >-
                 curl -G 'http://192.168.117.5:8086/query'
                 --data-urlencode "db=crypto"
-                --data-urlencode "q=SELECT moving_average(mean(\"price\"), 30) as value FROM \"prices\" WHERE (\"crypto\" = 'btc') GROUP BY time(1d) order by time desc limit 200"
+                --data-urlencode "q=SELECT moving_average(mean(\"price\"), 30) as value FROM \"prices\" WHERE (\"crypto\" = 'btc') GROUP BY time(1d) order by time desc limit 250"
                 -H "Accept: application/csv" > /volume/crypto.csv
       - - name: transform-darts-forecast
           template: darts-timeseries-forecaster
@@ -76,7 +76,7 @@ spec:
         beta.kubernetes.io/arch: arm64
         node-role.kubernetes.io/worker: worker
       container:
-        image: peterpeerdeman/darts-timeseries-forecaster:1.0.8-arm64
+        image: peterpeerdeman/darts-timeseries-forecaster:latest
         command: ["python", "app.py"]
         env:
         - name: PREDICTION_MODEL
@@ -90,9 +90,9 @@ spec:
         - name: INPUT_VALUECOL
           value: value
         - name: PREDICTION_SPLIT
-          value: '0.95'
-        # - name: PREDICTION_COUNT
-        #   value: '14'
+          value: '1'
+        - name: PREDICTION_COUNT
+          value: '14'
         - name: OUTPUT_FORMAT
           value: influx
         - name: OUTPUT_FILENAME

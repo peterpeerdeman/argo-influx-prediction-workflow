@@ -9,6 +9,8 @@ This argo workflow loads data from influxdb, makes timeseries predictions and lo
 
 ## commands
 
+```
 argo submit timeseries-prediction-parking.yaml -n argo
 argo watch timeseries-prediction-parking-pgdnj -n argo
+```
 
